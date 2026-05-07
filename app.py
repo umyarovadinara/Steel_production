@@ -20,7 +20,6 @@ column_mapping = {
 
 @st.cache_data
 def load_data():
-    # Убедись, что имя файла совпадает с твоим на GitHub
     df = pd.read_excel('steel_production_data.xlsx')
     df = df.rename(columns=column_mapping)
     
@@ -81,6 +80,7 @@ try:
     st.divider()
     st.subheader("Распределение по сортаментам (Масса, тн)")
     
+    # Создаем саму матрицу
     matrix = filtered_df.pivot_table(
         index='Ширина_Группа', 
         columns='Толщина_Группа', 
@@ -88,10 +88,14 @@ try:
         aggfunc='sum'
     ).fillna(0).sort_index(axis=0).sort_index(axis=1)
 
+    # Добавляем названия осям через переименование индекса
+    matrix.index.name = "Ширина, мм"
+    matrix.columns.name = "Толщина, мм"
+
     # Применяем форматирование
     styled_matrix = matrix.style.background_gradient(cmap='Greens', axis=None).format("{:.1f}")
     
-    # Отображаем как статичную таблицу для корректного отображения цветов
+    # Отображаем таблицу
     st.write(styled_matrix)
 
 except Exception as e:
