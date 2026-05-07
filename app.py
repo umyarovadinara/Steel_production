@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -7,67 +6,90 @@ st.set_page_config(page_title="Дашборд производства стал�
 
 st.title("📊 Аналитика производства стали")
 
-# Загрузка данных
+# 1. СЛОВАРЬ ПЕРЕИМЕНОВАНИЯ (Маппинг)
+# Слева — как в файле, Справа — как будет на дашборде
+column_mapping = {
+    'Масса (учет.)': 'Масса, тн',
+    'Дата создания': 'Дата создания',
+    'Марка': 'Марка',
+    'Вид ЕМ': 'Вид единицы учета',
+    'Длина': 'Длина, мм',
+    'Ширина': 'Ширина, мм',
+    'Толщ.': 'Толщина, мм'
+}
+
 @st.cache_data
 def load_data():
+    # Загружаем твой реальный файл
     df = pd.read_excel('steel_production_data.xlsx')
-    df['Дата обработки'] = pd.to_datetime(df['Дата обработки'])
+    
+    # ПЕРЕИМЕНОВАНИЕ: меняем заголовки на красивые
+    df = df.rename(columns=column_mapping)
+    
+    # Преобразование даты (используем уже новое название)
+    if 'Дата создания' in df.columns:
+        df['Дата создания'] = pd.to_datetime(df['Дата создания'])
+    
     return df
 
 try:
     df = load_data()
-
-    # БОКОВАЯ ПАНЕЛЬ (ФИЛЬТРЫ)
-    st.sidebar.header("Фильтры")
     
-    # Фильтр по дате
-    min_date = df['Дата обработки'].min().date()
-    max_date = df['Дата обработки'].max().date()
-    date_range = st.sidebar.date_input("Период", [min_date, max_date])
+    # Список новых названий для отображения на главной (только те, что мы переименовали)
+    main_display_columns = list(column_mapping.values())
+
+    # 2. БОКОВАЯ ПАНЕЛЬ (ФИЛЬТРЫ)
+    st.sidebar.header("Настройки фильтров")
+    
+    # Фильтр по дате (используем новое название)
+    if 'Дата создания' in df.columns:
+        min_date = df['Дата создания'].min().date()
+        max_date = df['Дата создания'].max().date()
+        date_range = st.sidebar.date_input("Выберите период", [min_date, max_date])
+    else:
+        st.error("Колонка 'Дата создания' не найдена в файле!")
+        st.stop()
 
     # Фильтр по марке
-    selected_marks = st.sidebar.multiselect("Выберите марку", df['Марка'].unique(), default=df['Марка'].unique())
+    all_marks = df['Марка'].unique()
+    selected_marks = st.sidebar.multiselect("Фильтр по маркам стали", all_marks, default=all_marks)
 
-    # Фильтрация данных
-    mask = (df['Дата обработки'].dt.date >= date_range[0]) & \
-           (df['Дата обработки'].dt.date <= date_range[1]) & \
+    # Применяем фильтры
+    mask = (df['Дата создания'].dt.date >= date_range[0]) & \
+           (df['Дата создания'].dt.date <= date_range[1]) & \
            (df['Марка'].isin(selected_marks))
     
     filtered_df = df.loc[mask]
 
-    # ГЛАВНЫЕ ПОКАЗАТЕЛИ
-    col1, col2, col3 = st.columns(3)
+    # 3. ГЛАВНЫЕ ПОКАЗАТЕЛИ (ВИЗУАЛ)
+    col1, col2 = st.columns(2)
     with col1:
-        st.metric("Общая масса (т)", f"{filtered_df['Масса (учет.)'].sum():,.2f}")
+        # Используем новое название 'Масса, тн'
+        total_mass = filtered_df['Масса, тн'].sum()
+        st.metric("Итого произведено (тн)", f"{total_mass:,.2f}")
     with col2:
-        st.metric("Кол-во записей", len(filtered_df))
-    with col3:
-        st.metric("Ср. толщина (мм)", round(filtered_df['Толщина'].mean(), 1))
+        st.metric("Всего записей в выборке", len(filtered_df))
 
-    # ГРАФИКИ
-    st.subheader("Динамика производства")
-    line_chart = px.line(filtered_df.groupby('Дата обработки')['Масса (учет.)'].sum().reset_index(), 
-                         x='Дата обработки', y='Масса (учет.)', 
-                         title="Выпуск продукции по дням")
-    st.plotly_chart(line_chart, use_container_width=True)
+    # График динамики
+    st.subheader("Динамика выпуска продукции")
+    line_data = filtered_df.groupby('Дата создания')['Масса, тн'].sum().reset_index()
+    fig = px.line(line_data, x='Дата создания', y='Масса, тн', markers=True, 
+                 labels={'Масса, тн': 'Вес (тонны)', 'Дата создания': 'День'})
+    st.plotly_chart(fig, use_container_width=True)
 
-    col_left, col_right = st.columns(2)
-    
-    with col_left:
-        st.subheader("Распределение по маркам")
-        pie_chart = px.pie(filtered_df, values='Масса (учет.)', names='Марка')
-        st.plotly_chart(pie_chart, use_container_width=True)
+    # 4. РАБОТА С ТАБЛИЦАМИ
+    st.divider()
+    tab1, tab2 = st.tabs(["📋 Основные показатели", "🔍 Все данные (включая второстепенные)"])
 
-    with col_right:
-        st.subheader("Виды ЕМ")
-        bar_chart = px.bar(filtered_df.groupby('Вид ЕМ')['Масса (учет.)'].sum().reset_index(), 
-                           x='Вид ЕМ', y='Масса (учет.)', color='Вид ЕМ')
-        st.plotly_chart(bar_chart, use_container_width=True)
+    with tab1:
+        st.write("Только важные поля с новыми названиями:")
+        # Показываем только колонки из нашего списка переименования
+        st.dataframe(filtered_df[main_display_columns], use_container_width=True)
 
-    # ТАБЛИЦА
-    with st.expander("Посмотреть исходные данные"):
-        st.write(filtered_df)
+    with tab2:
+        st.write("Полная таблица (здесь все поля, включая те, что не вошли в список важных):")
+        st.dataframe(filtered_df, use_container_width=True)
 
 except Exception as e:
-    st.error(f"Ошибка загрузки данных: {e}")
-    st.info("Пожалуйста, убедитесь, что файл 'steel_production_data.xlsx' находится в той же папке.")
+    st.error(f"Ошибка: {e}")
+    st.info("Убедитесь, что названия колонок в Excel точно такие: Масса (учет.), Дата создания, Марка, Вид ЕМ, Длина, Ширина, Толщ.")
