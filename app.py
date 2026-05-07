@@ -20,6 +20,7 @@ column_mapping = {
 
 @st.cache_data
 def load_data():
+    # Загружаем файл
     df = pd.read_excel('steel_production_data.xlsx')
     df = df.rename(columns=column_mapping)
     
@@ -27,7 +28,6 @@ def load_data():
         df['Дата создания'] = pd.to_datetime(df['Дата создания'])
         df['Месяц_Фильтр'] = df['Дата создания'].dt.strftime('%Y-%m')
     
-    # Приравниваем "Сляб" и "СЛЯБ"
     if 'Вид единицы учета' in df.columns:
         df['Вид единицы учета'] = df['Вид единицы учета'].astype(str).str.strip().str.capitalize()
     
@@ -51,12 +51,11 @@ try:
 
     filtered_df = df[df['Месяц_Фильтр'].isin(selected_months)]
 
-    # 3. КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ
+    # 3. КЛЮЧЕВЫЕ ПОКАЗАТЕЛИ (Оставили 2 показателя)
     st.subheader("Ключевые показатели")
-    k1, k2, k3 = st.columns(3)
+    k1, k2 = st.columns(2)
     k1.metric("Общий выпуск, тн", f"{filtered_df['Масса, тн'].sum():,.1f}")
-    k2.metric("Средний вес ед., тн", f"{filtered_df['Масса, тн'].mean():,.2f}")
-    k3.metric("Средняя толщина, мм", f"{filtered_df['Толщина, мм'].mean():,.1f}")
+    k2.metric("Средняя толщина, мм", f"{filtered_df['Толщина, мм'].mean():,.1f}")
 
     # 4. СТРУКТУРНЫЕ РАЗРЕЗЫ
     st.divider()
@@ -73,14 +72,23 @@ try:
         st.subheader("Динамика производства")
         line_data = filtered_df.set_index('Дата создания').resample('5D')['Масса, тн'].sum().reset_index()
         fig_line = px.line(line_data, x='Дата создания', y='Масса, тн', markers=True)
-        fig_line.update_layout(showlegend=False)
+        
+        # Единое форматирование дат на оси X
+        fig_line.update_xaxes(
+            dtick="D5", 
+            tickformat="%d.%m.%Y",
+            tickangle=-45
+        )
+        fig_line.update_layout(showlegend=False, yaxis_title="Масса, тн", xaxis_title=None)
         st.plotly_chart(fig_line, use_container_width=True)
 
-    # 5. МАТРИЦА СОРТАМЕНТА (ТАБЛИЧНАЯ ФОРМА)
+    # 5. МАТРИЦА СОРТАМЕНТА
     st.divider()
     st.subheader("Распределение по сортаментам (Масса, тн)")
     
-    # Создаем саму матрицу
+    # Визуальный указатель для толщины
+    st.write("← Ширина, мм / **Толщина, мм** →")
+    
     matrix = filtered_df.pivot_table(
         index='Ширина_Группа', 
         columns='Толщина_Группа', 
@@ -88,14 +96,9 @@ try:
         aggfunc='sum'
     ).fillna(0).sort_index(axis=0).sort_index(axis=1)
 
-    # Добавляем названия осям через переименование индекса
-    matrix.index.name = "Ширина, мм"
-    matrix.columns.name = "Толщина, мм"
-
     # Применяем форматирование
     styled_matrix = matrix.style.background_gradient(cmap='Greens', axis=None).format("{:.1f}")
     
-    # Отображаем таблицу
     st.write(styled_matrix)
 
 except Exception as e:
